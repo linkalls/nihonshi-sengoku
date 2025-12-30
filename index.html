@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>戦国大名勢力図・分国法マップ</title>
+    
+    <!-- React & ReactDOM -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    
+    <!-- Babel (JSX変換用) -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Leaflet CSS & JS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+    
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@500;700&family=Yuji+Syuku&display=swap" rel="stylesheet">
+    
+    <!-- Lucide Icons (簡易版読み込み) -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <style>
+        body { font-family: 'Zen Maru Gothic', sans-serif; background-color: #f5f5f4; }
+        .serif-font { font-family: 'Yuji Syuku', serif; }
+        .map-container { height: 100vh; width: 100%; z-index: 0; }
+        
+        /* カスタムマーカーのスタイル */
+        .custom-div-icon {
+            background: transparent;
+            border: none;
+        }
+        .marker-pin {
+            width: 40px;
+            height: 40px;
+            border-radius: 50% 50% 50% 0;
+            background: #c30b82;
+            position: absolute;
+            transform: rotate(-45deg);
+            left: 50%;
+            top: 50%;
+            margin: -20px 0 0 -20px;
+            box-shadow: 0 3px 5px rgba(0,0,0,0.3);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: 2px solid #fff;
+        }
+        .marker-pin::after {
+            content: '';
+            width: 24px;
+            height: 24px;
+            margin: 8px 0 0 8px;
+            background: #fff;
+            position: absolute;
+            border-radius: 50%;
+        }
+        .marker-label {
+            position: absolute;
+            transform: rotate(45deg);
+            font-family: 'Yuji Syuku', serif;
+            font-weight: bold;
+            font-size: 14px;
+            color: #333;
+            z-index: 10;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-left: 3px; 
+            margin-top: 3px;
+        }
+        
+        /* ポップアップ調整 */
+        .leaflet-popup-content-wrapper { padding: 0; overflow: hidden; border-radius: 8px; }
+        .leaflet-popup-content { margin: 0; width: 280px !important; }
+
+        /* スクロールバー */
+        .scrollbar-thin::-webkit-scrollbar { width: 6px; }
+        .scrollbar-thin::-webkit-scrollbar-thumb { background-color: #d6d3d1; border-radius: 3px; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        // --- データセット (Ankiデータに基づく) ---
+        const DAIMYO_DATA = [
+            { id: 1, clan: "伊達氏", old: "陸奥", now: "宮城/福島", law: "塵芥集 (171条)", note: "171条にも及ぶ分国法『塵芥集』を制定。", lat: 38.2531, lng: 140.8556, color: "#1e3a8a" },
+            { id: 2, clan: "北条氏", old: "相模", now: "神奈川", law: "早雲寺殿二十一箇条", note: "伊勢宗瑞(早雲)が堀越公方を滅ぼす。氏綱、氏康と続く。古河公方を撃破。", lat: 35.2510, lng: 139.1536, color: "#ca8a04" },
+            { id: 3, clan: "上杉氏", old: "越後", now: "新潟", law: "", note: "守護代の長尾景虎が上杉氏を継ぎ上杉謙信となる。川中島で武田と戦う。", lat: 37.1458, lng: 138.2236, color: "#581c87" },
+            { id: 4, clan: "武田氏", old: "甲斐", now: "山梨", law: "甲州法度之次第", note: "信玄堤(釜無川の治水)や分国法『甲州法度之次第』(喧嘩両成敗)で有名。", lat: 35.6865, lng: 138.5750, color: "#dc2626" },
+            { id: 5, clan: "今川氏", old: "駿河", now: "静岡", law: "今川仮名目録", note: "今川氏親が『今川仮名目録』を制定。義元は三河・遠江も領国化。", lat: 34.9789, lng: 138.3831, color: "#000000" },
+            { id: 6, clan: "斎藤氏", old: "美濃", now: "岐阜", law: "", note: "斎藤道三が守護の土岐氏を追放(下剋上)。", lat: 35.4339, lng: 136.7820, color: "#15803d" },
+            { id: 7, clan: "朝倉氏", old: "越前", now: "福井", law: "朝倉孝景条々", note: "斯波氏の守護代出身。家訓『朝倉孝景条々』。一乗谷が拠点。", lat: 35.9968, lng: 136.2946, color: "#047857" },
+            { id: 8, clan: "浅井氏", old: "近江(北)", now: "滋賀", law: "", note: "守護の京極氏を押さえて台頭。", lat: 35.4578, lng: 136.2758, color: "#be123c" },
+            { id: 9, clan: "六角氏", old: "近江(南)", now: "滋賀", law: "", note: "近江の守護大名。", lat: 35.1530, lng: 136.1600, color: "#7f1d1d" },
+            { id: 10, clan: "三好氏", old: "阿波", now: "徳島", law: "新加制式", note: "管領細川晴元を追放。三好長慶が畿内を支配。家臣の松永久秀に下剋上される。", lat: 34.0720, lng: 134.5500, color: "#0d9488" },
+            { id: 11, clan: "北畠氏", old: "伊勢", now: "三重", law: "", note: "伊勢の国司出身。", lat: 34.5600, lng: 136.5000, color: "#475569" },
+            { id: 12, clan: "大内氏", old: "周防", now: "山口", law: "", note: "中国地方の覇者だったが、家臣の陶晴賢に滅ぼされる。", lat: 34.1780, lng: 131.4730, color: "#b91c1c" },
+            { id: 13, clan: "毛利氏", old: "安芸", now: "広島", law: "", note: "国人出身。陶晴賢を倒し、中国地方を統一。", lat: 34.6989, lng: 132.7058, color: "#166534" },
+            { id: 14, clan: "尼子氏", old: "出雲", now: "島根", law: "", note: "京極氏の守護代出身。山陰地方で毛利氏と争う。", lat: 35.3621, lng: 133.1895, color: "#7e22ce" },
+            { id: 15, clan: "長宗我部氏", old: "土佐", now: "高知", law: "", note: "土佐の戦国大名。四国を統一。", lat: 33.5966, lng: 133.6441, color: "#4338ca" },
+            { id: 16, clan: "大友氏", old: "豊後", now: "大分", law: "", note: "守護出身。キリシタン大名。", lat: 33.2382, lng: 131.6126, color: "#b45309" },
+            { id: 17, clan: "龍造寺氏", old: "肥前", now: "佐賀", law: "", note: "肥前の戦国大名。", lat: 33.2635, lng: 130.3009, color: "#831843" },
+            { id: 18, clan: "相良氏", old: "肥後", now: "熊本", law: "", note: "肥後の戦国大名。", lat: 32.2100, lng: 130.7600, color: "#0f766e" },
+            { id: 19, clan: "島津氏", old: "薩摩", now: "鹿児島", law: "", note: "守護出身。薩摩の戦国大名。", lat: 31.5966, lng: 130.5571, color: "#000000" }
+        ];
+
+        // --- Leaflet Map Component ---
+        const MapComponent = ({ selectedDaimyo, onMarkerClick }) => {
+            const mapRef = useRef(null);
+            const markersRef = useRef({});
+
+            useEffect(() => {
+                // Initialize Map
+                if (!mapRef.current) {
+                    mapRef.current = L.map('map').setView([36.0, 138.0], 5);
+                    
+                    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                        attribution: '&copy; OpenStreetMap contributors'
+                    }).addTo(mapRef.current);
+                }
+
+                // Add Markers
+                DAIMYO_DATA.forEach(daimyo => {
+                    if (!markersRef.current[daimyo.id]) {
+                        const icon = L.divIcon({
+                            className: 'custom-div-icon',
+                            html: `
+                                <div style="background-color: ${daimyo.color}" class="marker-pin"></div>
+                                <span class="marker-label">${daimyo.clan.charAt(0)}</span>
+                            `,
+                            iconSize: [30, 42],
+                            iconAnchor: [15, 42],
+                            popupAnchor: [0, -40]
+                        });
+
+                        const marker = L.marker([daimyo.lat, daimyo.lng], { icon })
+                            .addTo(mapRef.current)
+                            .bindPopup(`
+                                <div class="font-sans p-3">
+                                    <h3 class="font-bold text-lg border-b pb-1 mb-2 serif-font" style="color:${daimyo.color}">${daimyo.clan}</h3>
+                                    <div class="text-xs text-gray-500 mb-2 font-bold">
+                                        ${daimyo.old} <span class="text-gray-300">▶</span> ${daimyo.now}
+                                    </div>
+                                    ${daimyo.law ? `<div class="bg-red-50 text-red-800 text-xs p-1 rounded mb-2 border border-red-200 font-bold">📜 ${daimyo.law}</div>` : ''}
+                                    <p class="text-sm text-gray-700 leading-snug">${daimyo.note}</p>
+                                </div>
+                            `);
+                        
+                        marker.on('click', () => onMarkerClick(daimyo));
+                        markersRef.current[daimyo.id] = marker;
+                    }
+                });
+            }, []);
+
+            // Fly to location
+            useEffect(() => {
+                if (selectedDaimyo && mapRef.current) {
+                    mapRef.current.flyTo([selectedDaimyo.lat, selectedDaimyo.lng], 9, {
+                        duration: 1.5
+                    });
+                    const marker = markersRef.current[selectedDaimyo.id];
+                    if (marker) marker.openPopup();
+                }
+            }, [selectedDaimyo]);
+
+            return <div id="map" className="w-full h-full"></div>;
+        };
+
+        // --- Main App ---
+        const App = () => {
+            const [selectedDaimyo, setSelectedDaimyo] = useState(null);
+            const [isSidebarOpen, setSidebarOpen] = useState(true);
+
+            // Lucide Icons setup
+            useEffect(() => {
+                lucide.createIcons();
+            }, [isSidebarOpen]);
+
+            return (
+                <div className="flex h-screen w-full flex-col md:flex-row overflow-hidden">
+                    {/* Header (Mobile) */}
+                    <div className="md:hidden bg-stone-800 text-white p-3 flex justify-between items-center shadow-md z-20">
+                        <h1 className="text-lg font-bold serif-font flex items-center gap-2">
+                            <i data-lucide="map" class="w-5 h-5"></i> 戦国大名マップ
+                        </h1>
+                        <button onClick={() => setSidebarOpen(!isSidebarOpen)}>
+                            <i data-lucide={isSidebarOpen ? "x" : "menu"} class="w-6 h-6"></i>
+                        </button>
+                    </div>
+
+                    {/* Sidebar */}
+                    <div className={`
+                        fixed md:relative z-10 h-full bg-white shadow-xl transition-transform duration-300 ease-in-out
+                        ${isSidebarOpen ? 'translate-x-0 w-full md:w-80' : '-translate-x-full md:translate-x-0 md:w-0 md:overflow-hidden'}
+                        flex flex-col
+                    `}>
+                        <div className="hidden md:flex bg-stone-800 text-white p-4 items-center justify-between shrink-0">
+                            <h1 className="text-lg font-bold serif-font flex items-center gap-2">
+                                <i data-lucide="scroll" class="w-5 h-5"></i> 戦国大名マップ
+                            </h1>
+                        </div>
+
+                        <div className="bg-yellow-50 p-2 text-xs text-yellow-800 border-b border-yellow-200 shrink-0">
+                            <p className="flex items-center gap-1 font-bold">
+                                <i data-lucide="info" class="w-3 h-3"></i>
+                                <span className="text-red-600">赤字</span>は分国法あり！
+                            </p>
+                        </div>
+
+                        <div className="flex-1 overflow-y-auto p-2 scrollbar-thin">
+                            {DAIMYO_DATA.map(d => (
+                                <div 
+                                    key={d.id}
+                                    onClick={() => {
+                                        setSelectedDaimyo(d);
+                                        if (window.innerWidth < 768) setSidebarOpen(false);
+                                    }}
+                                    className={`
+                                        mb-2 p-3 rounded-lg border cursor-pointer transition-all hover:shadow-md
+                                        flex items-center gap-3
+                                        ${selectedDaimyo?.id === d.id ? 'bg-stone-100 border-stone-400' : 'bg-white border-stone-200'}
+                                    `}
+                                >
+                                    <div className="w-8 h-8 rounded-full flex items-center justify-center text-white font-bold serif-font text-sm shrink-0 shadow-sm" style={{backgroundColor: d.color}}>
+                                        {d.clan.charAt(0)}
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                        <div className="flex justify-between items-center">
+                                            <span className="font-bold text-stone-800">{d.clan}</span>
+                                            {d.law && <span className="text-[10px] bg-red-100 text-red-600 px-1 rounded border border-red-200 whitespace-nowrap">法</span>}
+                                        </div>
+                                        <div className="text-xs text-stone-500 truncate mt-0.5">
+                                            {d.old} <span className="text-stone-300">▶</span> {d.now}
+                                        </div>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+
+                    {/* Map Area */}
+                    <div className="flex-1 relative z-0">
+                        {!isSidebarOpen && (
+                            <button 
+                                onClick={() => setSidebarOpen(true)}
+                                className="absolute top-4 left-4 z-[1000] bg-white p-2 rounded shadow-md md:hidden"
+                            >
+                                <i data-lucide="menu" class="w-6 h-6"></i>
+                            </button>
+                        )}
+                        <MapComponent selectedDaimyo={selectedDaimyo} onMarkerClick={setSelectedDaimyo} />
+                    </div>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
